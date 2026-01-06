@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Room, Player, RowOperation } from '../types';
+import type { Room } from '../types';
 import { MatrixDisplay } from './Matrix';
 import './GameRoom.css';
 
