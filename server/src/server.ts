@@ -15,7 +15,7 @@ const io = new Server(httpServer, {
   cors: {
     origin: [
       "http://localhost:5173",
-      "https://YOUR-FRONTEND-URL.onrender.com"  // Update this after deploying frontend
+      "https://rref-battle-game-1.onrender.com"
     ],
     methods: ["GET", "POST"]
   }
