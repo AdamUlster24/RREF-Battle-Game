@@ -254,10 +254,10 @@ export class CommandParser {
   }
 
   private static parseTerm(term: string): { row: number; scalar: number } | null {
-    // Match: R1, 3R2, 3*R2, R2*3, -3R2, -3*R2, (3/2)*R2, R2*(3/2)
+    // Match: R1, 3R2, 3*R2, R2*3, -3R2, -3*R2, (3/2)*R2, (3/2)R2, R2*(3/2)
     
-    // Check for fraction patterns first: (3/2)*R2 or R2*(3/2)
-    const fracPattern1 = term.match(/^\((-?\d+)\/(-?\d+)\)\*R(\d+)$/);
+    // Check for fraction patterns first: (3/2)*R2, (3/2)R2, or R2*(3/2)
+    const fracPattern1 = term.match(/^\((-?\d+)\/(-?\d+)\)\*?R(\d+)$/);
     const fracPattern2 = term.match(/^R(\d+)\*\((-?\d+)\/(-?\d+)\)$/);
     
     if (fracPattern1) {
