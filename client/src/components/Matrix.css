@@ -1,0 +1,54 @@
+.matrix-display {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.matrix-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  position: relative;
+  padding: 0 8px;
+}
+
+.matrix-table::before,
+.matrix-table::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  border-style: solid;
+  border-color: #333;
+}
+
+.matrix-table::before {
+  left: 0;
+  border-width: 2px 0 2px 2px;
+  border-radius: 4px 0 0 4px;
+}
+
+.matrix-table::after {
+  right: 0;
+  border-width: 2px 2px 2px 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.matrix-table td {
+  padding: 12px 16px;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 500;
+  min-width: 50px;
+  font-family: 'Courier New', monospace;
+}
+
+.opponent .matrix-table::before,
+.opponent .matrix-table::after {
+  border-color: #666;
+}
+
+.opponent .matrix-table td {
+  color: #666;
+}
