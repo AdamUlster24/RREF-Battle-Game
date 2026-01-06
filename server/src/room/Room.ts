@@ -116,15 +116,15 @@ export class Room {
   getMatrixDimensions(): [number, number] {
     if (this.data.settings.matrixSize === 'random') {
       const sizes = ['3x3', '4x4', '5x5'];
-      const randomSize = sizes[Math.floor(Math.random() * sizes.length)];
+      const randomSize = sizes[Math.floor(Math.random() * sizes.length)]!;
       return this.parseDimensions(randomSize);
     }
     return this.parseDimensions(this.data.settings.matrixSize);
   }
 
   private parseDimensions(size: string): [number, number] {
-    const [rows, cols] = size.split('x').map(Number);
-    return [rows, cols];
+    const parts = size.split('x').map(Number);
+    return [parts[0]!, parts[1]!];
   }
 
   handlePlayerOperation(playerId: string, operation: Operation): boolean {

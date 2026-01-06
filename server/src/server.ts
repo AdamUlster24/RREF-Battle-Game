@@ -124,7 +124,9 @@ io.on('connection', (socket: Socket) => {
     const result = CommandParser.parse(data.command, player.matrix);
     
     if (result.success) {
-      const completed = room.handlePlayerOperation(socket.id, player.matrix.getHistory().slice(-1)[0]);
+      const lastOp = player.matrix.getHistory().slice(-1)[0];
+      if (!lastOp) return;
+      const completed = room.handlePlayerOperation(socket.id, lastOp);
       
       // Send updated matrix to the room
       io.to(room.getData().id).emit('player-updated', {

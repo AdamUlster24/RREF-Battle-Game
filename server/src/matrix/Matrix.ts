@@ -58,7 +58,9 @@ export class Matrix {
       return false;
     }
 
-    [this.data[row1], this.data[row2]] = [this.data[row2], this.data[row1]];
+    const temp = this.data[row1];
+    this.data[row1] = this.data[row2]!;
+    this.data[row2] = temp!;
     
     this.history.push({
       type: 'swap',
@@ -77,7 +79,7 @@ export class Matrix {
       return false;
     }
 
-    this.data[row] = this.data[row].map(val => val * scalar);
+    this.data[row] = this.data[row]!.map(val => val * scalar);
     
     const scalarStr = scalar === Math.floor(scalar) 
       ? scalar.toString() 
@@ -105,7 +107,9 @@ export class Matrix {
     }
 
     for (let col = 0; col < this.getCols(); col++) {
-      this.data[targetRow][col] += scalar * this.data[sourceRow][col];
+      const targetVal = this.data[targetRow]?.[col] ?? 0;
+      const sourceVal = this.data[sourceRow]?.[col] ?? 0;
+      this.data[targetRow]![col] = targetVal + scalar * sourceVal;
     }
 
     const op = scalar >= 0 ? '+' : '-';
@@ -132,17 +136,20 @@ export class Matrix {
     // Reverse the operation
     switch (lastOp.type) {
       case 'swap':
-        [this.data[lastOp.row1], this.data[lastOp.row2]] = 
-          [this.data[lastOp.row2], this.data[lastOp.row1]];
+        const temp = this.data[lastOp.row1!];
+        this.data[lastOp.row1!] = this.data[lastOp.row2!]!;
+        this.data[lastOp.row2!] = temp!;
         break;
       
       case 'multiply':
-        this.data[lastOp.row] = this.data[lastOp.row].map(val => val / lastOp.scalar);
+        this.data[lastOp.row!] = this.data[lastOp.row!]!.map(val => val / lastOp.scalar!);
         break;
       
       case 'add':
         for (let col = 0; col < this.getCols(); col++) {
-          this.data[lastOp.targetRow][col] -= lastOp.scalar * this.data[lastOp.sourceRow][col];
+          const targetVal = this.data[lastOp.targetRow!]?.[col] ?? 0;
+          const sourceVal = this.data[lastOp.sourceRow!]?.[col] ?? 0;
+          this.data[lastOp.targetRow!]![col] = targetVal - lastOp.scalar! * sourceVal;
         }
         break;
     }
@@ -158,7 +165,7 @@ export class Matrix {
       // Find the leading entry (first non-zero) in this row
       let currentLeadCol = -1;
       for (let col = 0; col < this.getCols(); col++) {
-        if (Math.abs(this.data[row][col]) > tolerance) {
+        if (Math.abs(this.data[row]?.[col] ?? 0) > tolerance) {
           currentLeadCol = col;
           break;
         }
@@ -168,14 +175,14 @@ export class Matrix {
       if (currentLeadCol === -1) {
         // All remaining entries in the row must be zero
         for (let col = 0; col < this.getCols(); col++) {
-          if (Math.abs(this.data[row][col]) > tolerance) {
+          if (Math.abs(this.data[row]?.[col] ?? 0) > tolerance) {
             return false;
           }
         }
         // All subsequent rows must also be zero rows
         for (let r = row + 1; r < this.getRows(); r++) {
           for (let col = 0; col < this.getCols(); col++) {
-            if (Math.abs(this.data[r][col]) > tolerance) {
+            if (Math.abs(this.data[r]?.[col] ?? 0) > tolerance) {
               return false;
             }
           }
@@ -189,13 +196,13 @@ export class Matrix {
       }
 
       // Leading entry must be 1
-      if (Math.abs(this.data[row][currentLeadCol] - 1) > tolerance) {
+      if (Math.abs((this.data[row]?.[currentLeadCol] ?? 0) - 1) > tolerance) {
         return false;
       }
 
       // All other entries in the column containing the leading 1 must be 0
       for (let r = 0; r < this.getRows(); r++) {
-        if (r !== row && Math.abs(this.data[r][currentLeadCol]) > tolerance) {
+        if (r !== row && Math.abs(this.data[r]?.[currentLeadCol] ?? 0) > tolerance) {
           return false;
         }
       }

@@ -22,8 +22,8 @@ export class CommandParser {
     // Swap rows: R1 <> R2
     const swapMatch = cmd.match(/^R(\d+)<>R(\d+)$/);
     if (swapMatch) {
-      const row1 = parseInt(swapMatch[1]) - 1;
-      const row2 = parseInt(swapMatch[2]) - 1;
+      const row1 = parseInt(swapMatch[1]!) - 1;
+      const row2 = parseInt(swapMatch[2]!) - 1;
       
       if (matrix.swapRows(row1, row2)) {
         return { success: true };
@@ -37,8 +37,8 @@ export class CommandParser {
       return { success: false, error: 'Invalid format. Use: R1 <> R2, R1 = 5*R1, R1 = R1 + 3R2' };
     }
 
-    const targetRow = parseInt(eqMatch[1]) - 1;
-    const expression = eqMatch[2];
+    const targetRow = parseInt(eqMatch[1]!) - 1;
+    const expression = eqMatch[2]!;
 
     // Try to parse as multiplication/division: R1 = 5*R1, R1 = R1*5, R1 = R1/5
     const result = this.parseMultiplyDivide(expression, targetRow, matrix);
@@ -55,9 +55,9 @@ export class CommandParser {
     // Check for combined multiply/divide: 21R1/5 or 21*R1/5
     const combineMatch = expr.match(/^(-?\d+)\*?R(\d+)\/(-?\d+)$/);
     if (combineMatch) {
-      const numerator = parseInt(combineMatch[1]);
-      const row = parseInt(combineMatch[2]) - 1;
-      const denominator = parseInt(combineMatch[3]);
+      const numerator = parseInt(combineMatch[1]!);
+      const row = parseInt(combineMatch[2]!) - 1;
+      const denominator = parseInt(combineMatch[3]!);
       
       if (row !== targetRow) {
         return { success: false, error: `Row R${row + 1} doesn't match target row R${targetRow + 1}` };
@@ -89,13 +89,13 @@ export class CommandParser {
       let denominator: number;
       
       if (fracMulMatch1) {
-        row = parseInt(fracMulMatch1[1]) - 1;
-        numerator = parseInt(fracMulMatch1[2]);
-        denominator = parseInt(fracMulMatch1[3]);
+        row = parseInt(fracMulMatch1[1]!) - 1;
+        numerator = parseInt(fracMulMatch1[2]!);
+        denominator = parseInt(fracMulMatch1[3]!);
       } else {
-        numerator = parseInt(fracMulMatch2![1]);
-        denominator = parseInt(fracMulMatch2![2]);
-        row = parseInt(fracMulMatch2![3]) - 1;
+        numerator = parseInt(fracMulMatch2![1]!);
+        denominator = parseInt(fracMulMatch2![2]!);
+        row = parseInt(fracMulMatch2![3]!) - 1;
       }
       
       if (row !== targetRow) {
@@ -121,9 +121,9 @@ export class CommandParser {
     // Check for division by fraction: R1/(29/5)
     const fracDivMatch = expr.match(/^R(\d+)\/\((-?\d+)\/(-?\d+)\)$/);
     if (fracDivMatch) {
-      const row = parseInt(fracDivMatch[1]) - 1;
-      const numerator = parseInt(fracDivMatch[2]);
-      const denominator = parseInt(fracDivMatch[3]);
+      const row = parseInt(fracDivMatch[1]!) - 1;
+      const numerator = parseInt(fracDivMatch[2]!);
+      const denominator = parseInt(fracDivMatch[3]!);
       
       if (row !== targetRow) {
         return { success: false, error: `Row R${row + 1} doesn't match target row R${targetRow + 1}` };
@@ -158,17 +158,17 @@ export class CommandParser {
 
         if (pattern.source.includes('\\/')) {
           // Division: R1/5
-          row = parseInt(match[1]) - 1;
-          scalar = parseInt(match[2]);
+          row = parseInt(match[1]!) - 1;
+          scalar = parseInt(match[2]!);
           isDivision = true;
         } else if (pattern.source.startsWith('^R')) {
           // Pattern: R1*5 or R1*-5
-          row = parseInt(match[1]) - 1;
-          scalar = parseInt(match[2]);
+          row = parseInt(match[1]!) - 1;
+          scalar = parseInt(match[2]!);
         } else {
           // Pattern: 5*R1
-          scalar = parseInt(match[1]);
-          row = parseInt(match[2]) - 1;
+          scalar = parseInt(match[1]!);
+          row = parseInt(match[2]!) - 1;
         }
 
         if (row !== targetRow) {
@@ -261,18 +261,18 @@ export class CommandParser {
     const fracPattern2 = term.match(/^R(\d+)\*\((-?\d+)\/(-?\d+)\)$/);
     
     if (fracPattern1) {
-      const numerator = parseInt(fracPattern1[1]);
-      const denominator = parseInt(fracPattern1[2]);
-      const row = parseInt(fracPattern1[3]) - 1;
+      const numerator = parseInt(fracPattern1[1]!);
+      const denominator = parseInt(fracPattern1[2]!);
+      const row = parseInt(fracPattern1[3]!) - 1;
       
       if (denominator === 0) return null;
       return { row, scalar: numerator / denominator };
     }
     
     if (fracPattern2) {
-      const row = parseInt(fracPattern2[1]) - 1;
-      const numerator = parseInt(fracPattern2[2]);
-      const denominator = parseInt(fracPattern2[3]);
+      const row = parseInt(fracPattern2[1]!) - 1;
+      const numerator = parseInt(fracPattern2[2]!);
+      const denominator = parseInt(fracPattern2[3]!);
       
       if (denominator === 0) return null;
       return { row, scalar: numerator / denominator };
@@ -290,13 +290,13 @@ export class CommandParser {
       if (match) {
         if (pattern.source === '^R(\\d+)$') {
           // Just R1
-          return { row: parseInt(match[1]) - 1, scalar: 1 };
+          return { row: parseInt(match[1]!) - 1, scalar: 1 };
         } else if (pattern.source.endsWith('R(\\d+)$')) {
           // 3R2 or 3*R2 or -3R2
-          return { row: parseInt(match[2]) - 1, scalar: parseInt(match[1]) };
+          return { row: parseInt(match[2]!) - 1, scalar: parseInt(match[1]!) };
         } else {
           // R2*3
-          return { row: parseInt(match[1]) - 1, scalar: parseInt(match[2]) };
+          return { row: parseInt(match[1]!) - 1, scalar: parseInt(match[2]!) };
         }
       }
     }
