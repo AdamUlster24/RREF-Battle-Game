@@ -109,7 +109,7 @@ export function SinglePlayer({ onBack }: SinglePlayerProps) {
               <option value="random">Random Size</option>
             </select>
           </div>
-          <button onClick={startNewGame}>Start Practice</button>
+          <button className="btn btn-primary" onClick={startNewGame}>Start Practice</button>
         </div>
       ) : (
         <>
@@ -117,7 +117,7 @@ export function SinglePlayer({ onBack }: SinglePlayerProps) {
             <div className="timer">
               Time: {formatTime(elapsedTime)}
             </div>
-            <button onClick={startNewGame}>New Matrix</button>
+            <button className="btn btn-secondary" onClick={startNewGame}>New Matrix</button>
           </div>
 
           {isComplete && (
@@ -151,10 +151,10 @@ export function SinglePlayer({ onBack }: SinglePlayerProps) {
                   disabled={isComplete}
                 />
                 <div className="button-group">
-                  <button onClick={handleExecuteCommand} disabled={isComplete || !command.trim()}>
+                  <button className="btn btn-primary" onClick={handleExecuteCommand} disabled={isComplete || !command.trim()}>
                     Execute
                   </button>
-                  <button onClick={handleUndo} disabled={matrix.getHistory().length === 0}>
+                  <button className="btn btn-secondary" onClick={handleUndo} disabled={matrix.getHistory().length === 0}>
                     Undo
                   </button>
                 </div>
