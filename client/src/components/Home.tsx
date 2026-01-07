@@ -5,9 +5,10 @@ import './Home.css';
 interface HomeProps {
   onCreateRoom: (username: string, settings: RoomSettings) => void;
   onJoinRoom: (roomId: string, username: string) => void;
+  onSinglePlayer: () => void;
 }
 
-export function Home({ onCreateRoom, onJoinRoom }: HomeProps) {
+export function Home({ onCreateRoom, onJoinRoom, onSinglePlayer }: HomeProps) {
   const [username, setUsername] = useState('');
   const [roomId, setRoomId] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -36,8 +37,16 @@ export function Home({ onCreateRoom, onJoinRoom }: HomeProps) {
 
         {!showCreate ? (
           <div className="home-options">
+            <button className="btn btn-primary" onClick={onSinglePlayer}>
+              Single Player Practice
+            </button>
+
+            <div className="divider">
+              <span>or</span>
+            </div>
+
             <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-              Create Room
+              Multiplayer - Create Room
             </button>
             
             <div className="divider">

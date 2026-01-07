@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import socketService from './services/socket';
 import { Home } from './components/Home';
 import { GameRoom } from './components/GameRoom';
+import { SinglePlayer } from './components/SinglePlayer';
 import type { Room, RoomSettings } from './types';
 import './App.css';
 
@@ -9,6 +10,7 @@ function App() {
   const [room, setRoom] = useState<Room | null>(null);
   const [currentPlayerId, setCurrentPlayerId] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [mode, setMode] = useState<'menu' | 'single' | 'multi'>('menu');
 
   useEffect(() => {
     const socket = socketService.connect();
@@ -117,7 +119,17 @@ function App() {
   const handleLeave = () => {
     setRoom(null);
     setError('');
-    // Socket disconnect will be handled by the server
+    setMode('menu');
+  };
+
+  const handleBackToMenu = () => {
+    setMode('menu');
+    setRoom(null);
+    setError('');
+  };
+
+  const handleSinglePlayer = () => {
+    setMode('single');
   };
 
   const handleNextRound = () => {
@@ -135,9 +147,25 @@ function App() {
         </div>
       )}
 
-      {!room ? (
-        <Home onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />
-      ) : (
+      {mode === 'menu' && (
+        <Home 
+          onCreateRoom={(username, settings) => {
+            setMode('multi');
+            handleCreateRoom(username, settings);
+          }}
+          onJoinRoom={(roomId, username) => {
+            setMode('multi');
+            handleJoinRoom(roomId, username);
+          }}
+          onSinglePlayer={handleSinglePlayer}
+        />
+      )}
+
+      {mode === 'single' && (
+        <SinglePlayer onBack={handleBackToMenu} />
+      )}
+
+      {mode === 'multi' && room && (
         <GameRoom
           room={room}
           currentPlayerId={currentPlayerId}
