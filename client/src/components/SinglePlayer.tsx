@@ -16,7 +16,26 @@ export function SinglePlayer({ onBack }: SinglePlayerProps) {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const timerRef = useRef<number | undefined>(undefined);
+  const countdownRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (countdown !== null && countdown > 0) {
+      countdownRef.current = window.setTimeout(() => {
+        setCountdown(countdown - 1);
+      }, 1000);
+    } else if (countdown === 0) {
+      setCountdown(null);
+      setStartTime(Date.now());
+    }
+
+    return () => {
+      if (countdownRef.current) {
+        clearTimeout(countdownRef.current);
+      }
+    };
+  }, [countdown]);
 
   useEffect(() => {
     if (startTime && !isComplete) {
@@ -45,9 +64,10 @@ export function SinglePlayer({ onBack }: SinglePlayerProps) {
     setMatrix(newMatrix);
     setCommand('');
     setError('');
-    setStartTime(Date.now());
+    setStartTime(null);
     setElapsedTime(0);
     setIsComplete(false);
+    setCountdown(3);
   };
 
   const handleExecuteCommand = () => {
@@ -97,7 +117,15 @@ export function SinglePlayer({ onBack }: SinglePlayerProps) {
 
       <h1>Single Player - Practice Mode</h1>
 
-      {!matrix ? (
+      {countdown !== null && matrix ? (
+        <div className="countdown-overlay">
+          <div className="countdown-number">{countdown}</div>
+          <div className="matrix-preview">
+            <h3>Get Ready!</h3>
+            <MatrixDisplay matrix={matrix.getData()} />
+          </div>
+        </div>
+      ) : !matrix ? (
         <div className="matrix-config">
           <h3>Configure Your Matrix</h3>
           <div className="config-group">
@@ -148,13 +176,13 @@ export function SinglePlayer({ onBack }: SinglePlayerProps) {
                   onChange={(e) => setCommand(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleExecuteCommand()}
                   placeholder="Enter command (e.g., R1 <> R2)"
-                  disabled={isComplete}
+                  disabled={isComplete || countdown !== null}
                 />
                 <div className="button-group">
-                  <button className="btn btn-primary" onClick={handleExecuteCommand} disabled={isComplete || !command.trim()}>
+                  <button className="btn btn-primary" onClick={handleExecuteCommand} disabled={isComplete || !command.trim() || countdown !== null}>
                     Execute
                   </button>
-                  <button className="btn btn-secondary" onClick={handleUndo} disabled={matrix.getHistory().length === 0}>
+                  <button className="btn btn-secondary" onClick={handleUndo} disabled={matrix.getHistory().length === 0 || countdown !== null}>
                     Undo
                   </button>
                 </div>

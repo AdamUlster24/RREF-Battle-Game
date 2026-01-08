@@ -177,6 +177,52 @@
   background: #f0f0f0;
 }
 
+.countdown-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.countdown-number {
+  font-size: 150px;
+  font-weight: bold;
+  color: white;
+  margin-bottom: 40px;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+.matrix-preview {
+  background: white;
+  padding: 30px;
+  border-radius: 12px;
+  max-width: 600px;
+}
+
+.matrix-preview h3 {
+  text-align: center;
+  color: #333;
+  margin-bottom: 20px;
+}
+
 @media (max-width: 768px) {
   .game-area {
     grid-template-columns: 1fr;
