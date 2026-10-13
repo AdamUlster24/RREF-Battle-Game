@@ -1,126 +1,98 @@
-# RREF Battle Game
+# RREF Battle
 
-A competitive online multiplayer game where players race to put matrices into Reduced Row Echelon Form (RREF).
+Two players get the same matrix and race to put it into reduced row echelon form, typing elementary row operations as fast as they can. First to finish takes the round. There is also a solo practice mode against the clock.
 
-## Game Overview
+![A round in progress: your matrix and operation history on the left, your opponent's matrix on the right](docs/screenshot.png)
 
-Two players compete head-to-head to solve the same matrix using elementary row operations. The first player to correctly put the matrix into RREF wins! Practice your linear algebra skills while having fun.
+## Playing
 
-## Features
+1. One player creates a room, picks a matrix size (3×3, 4×4, 5×5 or random) and a match length (single battle, best of 3, best of 5), and shares the six-character room code.
+2. The other player joins with the code. Both ready up and the host starts the round.
+3. A three-second countdown shows the matrix. It cannot be touched until the countdown ends.
+4. Type row operations. You can see your opponent's matrix change as they work.
+5. The first player whose matrix is in RREF wins the round.
 
-- **Real-time Multiplayer**: WebSocket-based gameplay for instant synchronization
-- **Command-Line Style Input**: Execute operations like `R1 <-> R2`, `3*R1 -> R1`, or `R1 + 2*R2 -> R1`
-- **Operation History**: Track all your row operations with undo functionality
-- **Live Timer**: See how long you're taking in real-time
-- **Configurable Settings**:
-  - Matrix sizes: 3×3, 4×4, 5×5, or random
-  - Win conditions: Single battle, Best of 3, or Best of 5
-- **Room System**: Create private rooms with unique codes or join existing ones
-- **Countdown**: 3-second countdown with matrix preview before each battle
-- **Anonymous Play**: No account required - just enter a username and play
+### Commands
 
-## Tech Stack
+Rows are numbered from 1. Case and spaces are ignored.
 
-### Backend
-- **Node.js** with **Express**
-- **Socket.io** for real-time communication
-- **TypeScript** for type safety
-- Custom matrix RREF validation engine
+| Operation | Examples |
+|---|---|
+| Swap two rows | `R1 <> R2`, `R1 <-> R2` |
+| Scale a row | `R1 = 3R1`, `R1 = R1/3`, `R1 = (2/3)R1`, `R1 = -R1`, `R1 = 0.5R1` |
+| Add a multiple of another row | `R1 = R1 + 2R2`, `R1 = R1 - (3/2)R2`, `R1 = 2R2 + R1` |
 
-### Frontend
-- **React** with **TypeScript**
-- **Vite** for fast development
-- **Socket.io-client** for real-time updates
-- Custom CSS with gradient styling
+The target row can also go last (`R1 + 2R2 -> R1`), and `*` is optional (`3R2` and `3*R2` are the same).
 
-## Getting Started
+Only the three elementary operations are accepted. `R1 = R2` (overwrites a row), `R1 = 2R1 + R2` (two operations at once) and `R1 = 0R1` are rejected with a message saying why. Undo reverts your last operation.
 
-### Prerequisites
-- Node.js (v16 or higher)
-- npm
+## How it works
 
-### Installation
-
-1. **Clone the repository and navigate to the directory**
-
-2. **Install backend dependencies**:
-```bash
-cd server
-npm install
+```
+shared/   Game engine and wire protocol, used by both sides
+  fraction.ts   exact rational numbers on bigint
+  matrix.ts     row operations, undo, RREF check, Gauss-Jordan solver
+  parser.ts     typed command -> row operation
+  protocol.ts   room snapshot and socket event types
+server/   Node, Express, Socket.IO
+  src/room/Room.ts          the rules of a match, with no networking
+  src/room/RoomManager.ts   room codes and who is in which room
+  src/app.ts                socket events -> Room calls -> broadcast
+client/   React, Vite
 ```
 
-3. **Install frontend dependencies**:
+- **Exact arithmetic.** Entries are fractions of `bigint`s, never floats. `R1 = R1/3` followed by `R1 = 3R1` gives back exactly what you started with, and "is this RREF?" is an equality check with no tolerance.
+- **The server is authoritative.** Clients send the text the player typed; the server parses it, applies it and broadcasts a full snapshot of the room. A client cannot claim a win, move during the countdown, or act after the round is decided.
+- **One engine.** Practice mode runs the same `shared/` code in the browser that the server runs for multiplayer, so the two cannot disagree about what a command means.
+- **Untrusted input.** Every socket payload is validated before use; malformed events are ignored rather than crashing the process.
+
+A room moves through `waiting → countdown → playing → round-over → waiting …` until someone has enough wins, then `finished`. If a player leaves or disconnects mid-match, the match is abandoned, the room returns to `waiting`, and the remaining player becomes host.
+
+## Running locally
+
+Requires Node 20 or newer.
+
 ```bash
-cd ../client
-npm install
+npm run setup          # installs server/ and client/ dependencies
+
+# terminal 1: game server on http://localhost:3001
+npm run dev --prefix server
+
+# terminal 2: client on http://localhost:5173
+npm run dev --prefix client
 ```
 
-### Running the Application
+Open http://localhost:5173 in two tabs to play against yourself.
 
-1. **Start the backend server** (from the `server` directory):
+To run it the way it is deployed, as a single process that serves the built client:
+
 ```bash
-npm run dev
+npm run build
+npm start              # http://localhost:3001
 ```
-The server will run on `http://localhost:3001`
 
-2. **Start the frontend** (from the `client` directory):
+### Configuration
+
+| Variable | Where | Purpose |
+|---|---|---|
+| `PORT` | server | Port to listen on (default `3001`) |
+| `CLIENT_ORIGINS` | server | Comma-separated origins allowed to connect, when the client is hosted on a different domain |
+| `CLIENT_DIST` | server | Built client to serve (default `../client/dist`) |
+| `VITE_SERVER_URL` | client build | Game server URL, when it is not the origin serving the client |
+
+`render.yaml` describes a single-service deployment on Render.
+
+## Tests
+
 ```bash
-npm run dev
+npm test               # engine, parser, room rules and full matches over real sockets
+npm run check          # typecheck, tests, lint and production build (what CI runs)
 ```
-The client will run on `http://localhost:5173`
 
-3. **Open your browser** and navigate to `http://localhost:5173`
+The suite includes property-style tests: random sequences of row operations must undo exactly and must never change a matrix's reduced form.
 
-## How to Play
+## Limitations
 
-### Creating a Room
-1. Enter your username
-2. Click "Create Room"
-3. Configure your desired settings:
-   - Matrix size (3×3, 4×4, 5×5, or random)
-   - Win condition (single battle, best of 3, or best of 5)
-4. Share the room code with your opponent
-
-### Joining a Room
-1. Enter your username
-2. Enter the room code
-3. Click "Join Room"
-
-### Playing the Game
-1. Both players click "Ready" when they're prepared
-2. The host clicks "Start Game" to begin
-3. A 3-second countdown will begin, showing the matrix to solve
-4. When the game starts, use commands to perform row operations:
-   - **Swap rows**: `R1 <> R2` (swaps row 1 and row 2)
-   - **Multiply row**: `R1 = 3*R1` or `R1 = R1*3` (multiplies row 1 by 3)
-   - **Divide row**: `R1 = R1/5` (divides row 1 by 5)
-   - **Add rows**: `R1 = R1 + 2R2` or `R1 = R1 + R2*2` (adds 2 times row 2 to row 1)
-   - **Subtract rows**: `R1 = R1 - 3R2` or `R1 = R1 - 3*R2` (subtracts 3 times row 2 from row 1)
-5. Your operation history appears below your matrix
-6. Use the "Undo" button to reverse your last operation
-7. The first player to achieve RREF wins!
-
-### Command Format Examples
-- `R1 <> R2` - Swap rows 1 and 2
-- `R2 = 5*R2` - Multiply row 2 by 5
-- `R1 = R1*-2` - Multiply row 1 by -2
-- `R3 = R3/3` - Divide row 3 by 3
-- `R3 = R3 + 3R1` - Add 3 times row 1 to row 3
-- `R2 = R2 - 2*R3` - Subtract 2 times row 3 from row 2
-- `R1 = 3R2 + R1` - Add 3 times row 2 to row 1 (order doesn't matter for addition)
-
-**Note**: All row indices start at 1 (not 0). Spaces are optional. You can use various formats like `3R2`, `3*R2`, or `R2*3`.
-
-## Game Rules
-
-### RREF Requirements
-A matrix is in Reduced Row Echelon Form when:
-1. All zero rows are at the bottom
-2. The leading entry (first non-zero number from the left) of each non-zero row is 1
-3. Each leading 1 is the only non-zero entry in its column
-4. Leading 1s appear further to the right as you move down the rows
-
-### Valid Operations
-- **Row Swap**: Exchange any two rows
-- **Row Multiplication**: Multiply a row by any non-zero integer
-- **Row Addition**: Add a scalar multiple of one row to another row
+- Rooms live in memory, so a server restart ends every match.
+- A dropped connection removes the player from the room; there is no rejoin.
+- Matches are two players only.

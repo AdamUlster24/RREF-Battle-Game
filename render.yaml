@@ -1,0 +1,12 @@
+# Render blueprint: one web service that runs the game server and serves the built client.
+services:
+  - type: web
+    name: rref-battle
+    runtime: node
+    plan: free
+    buildCommand: npm run setup && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
