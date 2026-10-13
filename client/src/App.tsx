@@ -1,180 +1,125 @@
-import { useState, useEffect } from 'react';
-import socketService from './services/socket';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Ack, RoomSettings, RoomSnapshot } from '@shared/protocol.js';
+import { socket } from './lib/socket';
 import { Home } from './components/Home';
 import { GameRoom } from './components/GameRoom';
 import { SinglePlayer } from './components/SinglePlayer';
-import type { Room, RoomSettings } from './types';
 import './App.css';
 
+interface RoomView {
+  room: RoomSnapshot;
+  /** When the room entered its current state, on the `performance.now()` clock. */
+  phaseStartedAt: number;
+}
+
+const NOTICE_MS = 4000;
+
 function App() {
-  const [room, setRoom] = useState<Room | null>(null);
-  const [currentPlayerId, setCurrentPlayerId] = useState<string>('');
-  const [error, setError] = useState<string>('');
-  const [mode, setMode] = useState<'menu' | 'single' | 'multi'>('menu');
+  const [view, setView] = useState<RoomView | null>(null);
+  const [playerId, setPlayerId] = useState('');
+  const [connected, setConnected] = useState(false);
+  const [practising, setPractising] = useState(false);
+  const [notice, setNotice] = useState('');
 
-  useEffect(() => {
-    const socket = socketService.connect();
-    setCurrentPlayerId(socket.id!);
+  const viewRef = useRef<RoomView | null>(null);
+  // A snapshot already in flight when we leave must not put us back in the room.
+  const leftRoomId = useRef<string | null>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
 
-    socket.on('connect', () => {
-      setCurrentPlayerId(socket.id!);
-    });
-
-    socket.on('room-created', (data: { roomId: string; room: Room }) => {
-      setRoom(data.room);
-      setError('');
-    });
-
-    socket.on('room-updated', (updatedRoom: Room) => {
-      setRoom(updatedRoom);
-    });
-
-    socket.on('join-error', (data: { message: string }) => {
-      setError(data.message);
-    });
-
-    socket.on('countdown-started', (data: { room: Room }) => {
-      setRoom(data.room);
-    });
-
-    socket.on('game-started', (updatedRoom: Room) => {
-      setRoom(updatedRoom);
-    });
-
-    socket.on('player-updated', (data: { playerId: string; matrixData: number[][]; history: any[] }) => {
-      setRoom(prevRoom => {
-        if (!prevRoom) return null;
-        
-        const updatedPlayers = prevRoom.players.map(player => 
-          player.id === data.playerId
-            ? { ...player, matrixData: data.matrixData, history: data.history }
-            : player
-        );
-
-        return { ...prevRoom, players: updatedPlayers };
-      });
-    });
-
-    socket.on('round-finished', (data: { winner: string; room: Room }) => {
-      setRoom(data.room);
-      // Could add notification here
-    });
-
-    socket.on('match-finished', (data: { winner: string; room: Room }) => {
-      setRoom(data.room);
-    });
-
-    socket.on('command-error', (data: { error: string }) => {
-      setError(data.error);
-      setTimeout(() => setError(''), 3000);
-    });
-
-    return () => {
-      socketService.disconnect();
-    };
+  const showNotice = useCallback((message: string) => {
+    setNotice(message);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(''), NOTICE_MS);
   }, []);
 
+  const showRoom = useCallback((next: RoomView | null) => {
+    viewRef.current = next;
+    setView(next);
+  }, []);
+
+  useEffect(() => {
+    const onConnect = () => {
+      setPlayerId(socket.id ?? '');
+      setConnected(true);
+    };
+
+    const onDisconnect = () => {
+      setConnected(false);
+      if (viewRef.current) {
+        showRoom(null);
+        showNotice('Connection lost. You have been removed from the room.');
+      }
+    };
+
+    const onRoomState = (room: RoomSnapshot) => {
+      if (room.id === leftRoomId.current) return;
+
+      const previous = viewRef.current;
+      const sameRoom = previous?.room.id === room.id;
+      const samePhase = sameRoom && previous.room.state === room.state && previous.room.round === room.round;
+      if (sameRoom && room.players.length < previous.room.players.length) {
+        const gone = previous.room.players.find(p => !room.players.some(q => q.id === p.id));
+        showNotice(`${gone?.username ?? 'Your opponent'} left the room.`);
+      }
+      showRoom({ room, phaseStartedAt: samePhase ? previous.phaseStartedAt : performance.now() });
+    };
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    socket.on('room-state', onRoomState);
+    socket.connect();
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      socket.off('room-state', onRoomState);
+      socket.disconnect();
+    };
+  }, [showNotice, showRoom]);
+
+  const reportFailure = (result: Ack) => {
+    if (!result.ok) showNotice(result.error);
+  };
+
   const handleCreateRoom = (username: string, settings: RoomSettings) => {
-    const socket = socketService.getSocket();
-    if (socket) {
-      socket.emit('create-room', { username, settings });
-    }
+    leftRoomId.current = null;
+    socket.emit('create-room', { username, settings }, reportFailure);
   };
 
   const handleJoinRoom = (roomId: string, username: string) => {
-    const socket = socketService.getSocket();
-    if (socket) {
-      socket.emit('join-room', { roomId, username });
-    }
-  };
-
-  const handleExecuteCommand = (command: string) => {
-    const socket = socketService.getSocket();
-    if (socket) {
-      socket.emit('execute-command', { command });
-    }
-  };
-
-  const handleUndo = () => {
-    const socket = socketService.getSocket();
-    if (socket) {
-      socket.emit('undo');
-    }
-  };
-
-  const handleToggleReady = () => {
-    const socket = socketService.getSocket();
-    if (socket) {
-      socket.emit('toggle-ready');
-    }
-  };
-
-  const handleStartGame = () => {
-    const socket = socketService.getSocket();
-    if (socket) {
-      socket.emit('start-game');
-    }
+    leftRoomId.current = null;
+    socket.emit('join-room', { roomId, username }, reportFailure);
   };
 
   const handleLeave = () => {
-    setRoom(null);
-    setError('');
-    setMode('menu');
-  };
-
-  const handleBackToMenu = () => {
-    setMode('menu');
-    setRoom(null);
-    setError('');
-  };
-
-  const handleSinglePlayer = () => {
-    setMode('single');
-  };
-
-  const handleNextRound = () => {
-    const socket = socketService.getSocket();
-    if (socket) {
-      socket.emit('next-round');
-    }
+    leftRoomId.current = view?.room.id ?? null;
+    socket.emit('leave-room');
+    showRoom(null);
   };
 
   return (
     <div className="app">
-      {error && (
-        <div className="error-toast">
-          {error}
+      {notice && (
+        <div className="error-toast" role="alert">
+          {notice}
         </div>
       )}
 
-      {mode === 'menu' && (
-        <Home 
-          onCreateRoom={(username, settings) => {
-            setMode('multi');
-            handleCreateRoom(username, settings);
-          }}
-          onJoinRoom={(roomId, username) => {
-            setMode('multi');
-            handleJoinRoom(roomId, username);
-          }}
-          onSinglePlayer={handleSinglePlayer}
-        />
-      )}
-
-      {mode === 'single' && (
-        <SinglePlayer onBack={handleBackToMenu} />
-      )}
-
-      {mode === 'multi' && room && (
+      {view ? (
         <GameRoom
-          room={room}
-          currentPlayerId={currentPlayerId}
-          onExecuteCommand={handleExecuteCommand}
-          onUndo={handleUndo}
-          onToggleReady={handleToggleReady}
-          onStartGame={handleStartGame}
+          room={view.room}
+          phaseStartedAt={view.phaseStartedAt}
+          playerId={playerId}
           onLeave={handleLeave}
-          onNextRound={handleNextRound}
+        />
+      ) : practising ? (
+        <SinglePlayer onBack={() => setPractising(false)} />
+      ) : (
+        <Home
+          connected={connected}
+          onCreateRoom={handleCreateRoom}
+          onJoinRoom={handleJoinRoom}
+          onSinglePlayer={() => setPractising(true)}
         />
       )}
     </div>

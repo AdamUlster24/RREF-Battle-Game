@@ -1,114 +1,85 @@
-import { useState, useEffect, useRef } from 'react';
-import type { Room } from '../types';
+import { useState } from 'react';
+import { COUNTDOWN_MS, type RoomSnapshot } from '@shared/protocol.js';
+import { socket } from '../lib/socket';
+import { formatTime, useNow } from '../lib/time';
+import { CommandBar } from './CommandBar';
+import { History } from './History';
 import { MatrixDisplay } from './Matrix';
 import './GameRoom.css';
 
 interface GameRoomProps {
-  room: Room;
-  currentPlayerId: string;
-  onExecuteCommand: (command: string) => void;
-  onUndo: () => void;
-  onToggleReady: () => void;
-  onStartGame: () => void;
+  room: RoomSnapshot;
+  /** When the room entered its current state, on the `performance.now()` clock. */
+  phaseStartedAt: number;
+  playerId: string;
   onLeave: () => void;
-  onNextRound: () => void;
 }
 
-export function GameRoom({
-  room,
-  currentPlayerId,
-  onExecuteCommand,
-  onUndo,
-  onToggleReady,
-  onStartGame,
-  onLeave,
-  onNextRound
-}: GameRoomProps) {
-  const [command, setCommand] = useState('');
-  const [elapsedTime, setElapsedTime] = useState(0);
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const commandInputRef = useRef<HTMLInputElement>(null);
+const WIN_CONDITION_LABELS = {
+  single: 'Single battle',
+  'best-of-3': 'Best of 3',
+  'best-of-5': 'Best of 5'
+};
 
-  const currentPlayer = room.players.find(p => p.id === currentPlayerId);
-  const opponent = room.players.find(p => p.id !== currentPlayerId);
+function sendCommand(command: string): Promise<string | null> {
+  return new Promise(resolve => {
+    socket.emit('command', { command }, result => resolve(result.ok ? null : result.error));
+  });
+}
 
-  // Timer effect
-  useEffect(() => {
-    if (room.state === 'playing' && room.gameStarted) {
-      const interval = setInterval(() => {
-        setElapsedTime(Date.now() - room.gameStarted!);
-      }, 10);
-      return () => clearInterval(interval);
-    } else {
-      setElapsedTime(0);
-    }
-  }, [room.state, room.gameStarted]);
+export function GameRoom({ room, phaseStartedAt, playerId, onLeave }: GameRoomProps) {
+  const [copied, setCopied] = useState(false);
 
-  // Countdown effect
-  useEffect(() => {
-    if (room.state === 'countdown' && room.countdownStarted) {
-      const interval = setInterval(() => {
-        const remaining = 3000 - (Date.now() - room.countdownStarted!);
-        setCountdown(Math.max(0, Math.ceil(remaining / 1000)));
-        if (remaining <= 0) {
-          setCountdown(null);
-        }
-      }, 100);
-      return () => clearInterval(interval);
-    } else {
-      setCountdown(null);
-    }
-  }, [room.state, room.countdownStarted]);
-
-  // Auto-focus input when game starts
-  useEffect(() => {
-    if (room.state === 'playing') {
-      commandInputRef.current?.focus();
-    }
-  }, [room.state]);
-
-  const handleSubmitCommand = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (command.trim()) {
-      onExecuteCommand(command.trim());
-      setCommand('');
-    }
-  };
-
-  const formatTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    const milliseconds = Math.floor((ms % 1000) / 10);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(2, '0')}`;
-  };
+  const me = room.players.find(p => p.id === playerId);
+  const opponent = room.players.find(p => p.id !== playerId);
+  const isHost = room.hostId === playerId;
 
   const isWaiting = room.state === 'waiting';
   const isCountdown = room.state === 'countdown';
   const isPlaying = room.state === 'playing';
+  const isRoundOver = room.state === 'round-over';
   const isFinished = room.state === 'finished';
 
-  const getWinner = () => {
-    return room.players.reduce((max, player) => 
-      player.wins > max.wins ? player : max
-    );
+  const elapsed = Math.max(0, useNow(isCountdown || isPlaying) - phaseStartedAt);
+  const countdown = Math.max(1, Math.ceil((COUNTDOWN_MS - elapsed) / 1000));
+
+  const roundWinner = room.players.find(p => p.id === room.lastRound?.winnerId);
+  const iWonRound = roundWinner?.id === playerId;
+
+  const copyCode = async () => {
+    await navigator.clipboard?.writeText(room.id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
   return (
     <div className="game-room">
       <div className="game-header">
         <div className="room-info">
-          <h2>Room: {room.id}</h2>
+          <h2>
+            Room: <span className="room-code">{room.id}</span>
+            <button onClick={copyCode} className="copy-btn" title="Copy room code">
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </h2>
           <div className="settings-info">
-            {room.settings.matrixSize} • {room.settings.winCondition.replace('-', ' ')}
+            {room.settings.matrixSize === 'random' ? 'Random size' : room.settings.matrixSize.replace('x', '×')}
+            {' • '}
+            {WIN_CONDITION_LABELS[room.settings.winCondition]}
+            {room.requiredWins > 1 && ` • Round ${room.round}`}
           </div>
         </div>
-        
+
         <div className="players-info">
           {room.players.map(player => (
-            <div key={player.id} className={`player-badge ${player.id === currentPlayerId ? 'current' : ''}`}>
-              <span className="player-name">{player.username}</span>
-              <span className="player-wins">{player.wins} wins</span>
+            <div key={player.id} className={`player-badge ${player.id === playerId ? 'current' : ''}`}>
+              <span className="player-name">
+                {player.username}
+                {player.id === room.hostId && <span className="host-tag">host</span>}
+              </span>
+              <span className="player-wins">
+                {player.wins} / {room.requiredWins}
+              </span>
               {isWaiting && (
                 <span className={`ready-status ${player.ready ? 'ready' : ''}`}>
                   {player.ready ? '✓' : '○'}
@@ -125,24 +96,31 @@ export function GameRoom({
 
       {isWaiting && (
         <div className="waiting-screen">
-          <h3>Waiting for Players</h3>
-          {room.players.length < 2 ? (
-            <p>Waiting for opponent to join...</p>
+          {!opponent ? (
+            <>
+              <h3>Waiting for an opponent</h3>
+              <p>Send them the room code:</p>
+              <div className="big-code">{room.id}</div>
+            </>
           ) : (
             <>
-              <p>Both players ready to start!</p>
+              <h3>{room.round > 1 ? `Round ${room.round}` : 'Get ready'}</h3>
+              <p>
+                {!room.players.every(p => p.ready)
+                  ? 'The round can start once both players are ready.'
+                  : isHost
+                    ? 'Everyone is ready. Start when you like.'
+                    : `Waiting for ${opponent.username} to start the round.`}
+              </p>
               <div className="ready-controls">
-                <button 
-                  onClick={onToggleReady} 
-                  className={`btn ${currentPlayer?.ready ? 'btn-secondary' : 'btn-primary'}`}
+                <button
+                  onClick={() => socket.emit('toggle-ready')}
+                  className={`btn ${me?.ready ? 'btn-secondary' : 'btn-primary'}`}
                 >
-                  {currentPlayer?.ready ? 'Not Ready' : 'Ready'}
+                  {me?.ready ? 'Not Ready' : 'Ready'}
                 </button>
-                {room.hostId === currentPlayerId && room.players.every(p => p.ready) && (
-                  <button 
-                    onClick={onStartGame} 
-                    className="btn btn-primary start-btn"
-                  >
+                {isHost && room.players.every(p => p.ready) && (
+                  <button onClick={() => socket.emit('start-game')} className="btn btn-primary start-btn">
                     Start Game
                   </button>
                 )}
@@ -152,97 +130,74 @@ export function GameRoom({
         </div>
       )}
 
-      {isCountdown && countdown !== null && (
+      {isCountdown && (
         <div className="countdown-screen">
           <h2>Get Ready!</h2>
           <div className="countdown-number">{countdown}</div>
           <div className="matrix-preview">
-            {room.targetMatrix && <MatrixDisplay matrix={room.targetMatrix} />}
+            {room.startMatrix && <MatrixDisplay matrix={room.startMatrix} />}
           </div>
         </div>
       )}
 
-      {(isPlaying || isFinished) && (
+      {(isPlaying || isRoundOver || isFinished) && (
         <div className="game-content">
           <div className="timer-display">
-            {isPlaying && <div className="timer">{formatTime(elapsedTime)}</div>}
-            {isFinished && (
-              <div className="game-over">
-                <h2>🎉 {getWinner().username} Wins!</h2>
-                {getWinner().id === currentPlayerId && <p>Congratulations!</p>}
+            {isPlaying && <div className="timer">{formatTime(elapsed)}</div>}
+            {roundWinner && room.lastRound && (
+              <div className={`game-over ${iWonRound ? 'won' : 'lost'}`}>
+                <h2>
+                  {isFinished
+                    ? iWonRound ? 'You win the match!' : `${roundWinner.username} wins the match`
+                    : iWonRound ? 'You take the round!' : `${roundWinner.username} takes the round`}
+                </h2>
+                <p>
+                  Solved in {formatTime(room.lastRound.timeMs)}
+                  {room.requiredWins > 1 && ` • ${room.players.map(p => `${p.username} ${p.wins}`).join(' – ')}`}
+                </p>
+                <div className="round-actions">
+                  {isRoundOver && (
+                    <button onClick={() => socket.emit('next-round')} className="btn btn-primary">
+                      Next Round
+                    </button>
+                  )}
+                  {isFinished && (
+                    <button onClick={() => socket.emit('rematch')} className="btn btn-primary">
+                      Rematch
+                    </button>
+                  )}
+                  <button onClick={onLeave} className="btn btn-secondary">
+                    Back to Menu
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
           <div className="matrices-container">
             <div className="player-matrix">
-              <h3>Your Matrix {currentPlayer?.completedAt && <span className="completed">✓ Completed!</span>}</h3>
-              {currentPlayer?.matrixData && <MatrixDisplay matrix={currentPlayer.matrixData} />}
-              
+              <h3>Your Matrix</h3>
+              {me?.matrix && <MatrixDisplay matrix={me.matrix} />}
               {isPlaying && (
-                <div className="controls">
-                  <form onSubmit={handleSubmitCommand} className="command-form">
-                    <input
-                      ref={commandInputRef}
-                      type="text"
-                      value={command}
-                      onChange={(e) => setCommand(e.target.value)}
-                      placeholder="e.g., R1 <> R2, R1 = 3*R1, R1 = R1 + 2R2"
-                      className="command-input"
-                      disabled={!!currentPlayer?.completedAt}
-                    />
-                    <button type="submit" className="btn btn-primary" disabled={!!currentPlayer?.completedAt}>
-                      Execute
-                    </button>
-                    <button type="button" onClick={onUndo} className="btn btn-secondary" disabled={!!currentPlayer?.completedAt}>
-                      Undo
-                    </button>
-                  </form>
-                  <div className="command-hints">
-                    <span>Swap: R1 &lt;&gt; R2</span>
-                    <span>Multiply: R1 = 3*R1</span>
-                    <span>Divide: R1 = R1/5</span>
-                    <span>Add: R1 = R1 + 2R2</span>
-                    <span>Subtract: R1 = R1 - 3*R2</span>
-                  </div>
-                </div>
+                <CommandBar
+                  onSubmit={sendCommand}
+                  onUndo={() => socket.emit('undo')}
+                  canUndo={!!me?.history.length}
+                />
               )}
-
-              <div className="history">
-                <h4>Operations History</h4>
-                <div className="history-list">
-                  {currentPlayer?.history?.map((op, idx) => (
-                    <div key={idx} className="history-item">
-                      {idx + 1}. {op.description}
-                    </div>
-                  ))}
-                  {(!currentPlayer?.history || currentPlayer.history.length === 0) && (
-                    <div className="history-empty">No operations yet</div>
-                  )}
-                </div>
-              </div>
+              <History operations={me?.history ?? []} />
             </div>
 
             {opponent && (
               <div className="opponent-matrix">
-                <h3>{opponent.username}'s Matrix {opponent.completedAt && <span className="completed">✓ Completed!</span>}</h3>
-                {opponent.matrixData && <MatrixDisplay matrix={opponent.matrixData} isOpponent />}
+                <h3>{opponent.username}'s Matrix</h3>
+                {opponent.matrix && <MatrixDisplay matrix={opponent.matrix} isOpponent />}
+                <div className="opponent-progress">
+                  {opponent.history.length} {opponent.history.length === 1 ? 'operation' : 'operations'}
+                </div>
               </div>
             )}
           </div>
-
-          {isFinished && (
-            <div className="round-actions">
-              {room.settings.winCondition !== 'single' && (
-                <button onClick={onNextRound} className="btn btn-primary">
-                  Next Round
-                </button>
-              )}
-              <button onClick={onLeave} className="btn btn-secondary">
-                Back to Lobby
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>

@@ -1,19 +1,36 @@
 import { useState } from 'react';
-import type { RoomSettings } from '../types';
+import {
+  MATRIX_SIZES,
+  MAX_USERNAME_LENGTH,
+  ROOM_CODE_LENGTH,
+  WIN_CONDITIONS,
+  type MatrixSize,
+  type RoomSettings,
+  type WinCondition
+} from '@shared/protocol.js';
 import './Home.css';
 
 interface HomeProps {
+  /** False until the game server answers; multiplayer is unavailable until then. */
+  connected: boolean;
   onCreateRoom: (username: string, settings: RoomSettings) => void;
   onJoinRoom: (roomId: string, username: string) => void;
   onSinglePlayer: () => void;
 }
 
-export function Home({ onCreateRoom, onJoinRoom, onSinglePlayer }: HomeProps) {
+const SIZE_LABELS: Record<MatrixSize, string> = { '3x3': '3×3', '4x4': '4×4', '5x5': '5×5', random: 'Random' };
+const WIN_LABELS: Record<WinCondition, string> = {
+  single: 'Single Battle',
+  'best-of-3': 'Best of 3',
+  'best-of-5': 'Best of 5'
+};
+
+export function Home({ connected, onCreateRoom, onJoinRoom, onSinglePlayer }: HomeProps) {
   const [username, setUsername] = useState('');
   const [roomId, setRoomId] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [matrixSize, setMatrixSize] = useState<'3x3' | '4x4' | '5x5' | 'random'>('3x3');
-  const [winCondition, setWinCondition] = useState<'single' | 'best-of-3' | 'best-of-5'>('single');
+  const [matrixSize, setMatrixSize] = useState<MatrixSize>('3x3');
+  const [winCondition, setWinCondition] = useState<WinCondition>('single');
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +45,19 @@ export function Home({ onCreateRoom, onJoinRoom, onSinglePlayer }: HomeProps) {
       onJoinRoom(roomId.trim().toUpperCase(), username.trim());
     }
   };
+
+  const usernameInput = (
+    <input
+      type="text"
+      placeholder="Your Username"
+      value={username}
+      onChange={(e) => setUsername(e.target.value)}
+      maxLength={MAX_USERNAME_LENGTH}
+      required
+      className="input"
+      aria-label="Your username"
+    />
+  );
 
   return (
     <div className="home-container">
@@ -45,76 +75,69 @@ export function Home({ onCreateRoom, onJoinRoom, onSinglePlayer }: HomeProps) {
               <span>or</span>
             </div>
 
-            <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+            <button className="btn btn-primary" onClick={() => setShowCreate(true)} disabled={!connected}>
               Multiplayer - Create Room
             </button>
-            
+
             <div className="divider">
               <span>or</span>
             </div>
 
             <form onSubmit={handleJoinRoom} className="join-form">
-              <input
-                type="text"
-                placeholder="Your Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                maxLength={20}
-                required
-                className="input"
-              />
+              {usernameInput}
               <input
                 type="text"
                 placeholder="Room Code"
                 value={roomId}
                 onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-                maxLength={6}
+                maxLength={ROOM_CODE_LENGTH}
                 required
                 className="input"
+                aria-label="Room code"
+                autoComplete="off"
               />
-              <button type="submit" className="btn btn-secondary">
+              <button type="submit" className="btn btn-secondary" disabled={!connected}>
                 Join Room
               </button>
             </form>
+
+            {!connected && (
+              <p className="connection-note" role="status">
+                Connecting to the game server… Practice mode works without it.
+              </p>
+            )}
           </div>
         ) : (
           <div className="create-room-form">
             <h2>Create Room</h2>
             <form onSubmit={handleCreateRoom}>
-              <input
-                type="text"
-                placeholder="Your Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                maxLength={20}
-                required
-                className="input"
-              />
+              {usernameInput}
 
               <div className="setting-group">
-                <label>Matrix Size</label>
-                <select 
-                  value={matrixSize} 
-                  onChange={(e) => setMatrixSize(e.target.value as any)}
+                <label htmlFor="matrix-size">Matrix Size</label>
+                <select
+                  id="matrix-size"
+                  value={matrixSize}
+                  onChange={(e) => setMatrixSize(e.target.value as MatrixSize)}
                   className="select"
                 >
-                  <option value="3x3">3×3</option>
-                  <option value="4x4">4×4</option>
-                  <option value="5x5">5×5</option>
-                  <option value="random">Random</option>
+                  {MATRIX_SIZES.map(size => (
+                    <option key={size} value={size}>{SIZE_LABELS[size]}</option>
+                  ))}
                 </select>
               </div>
 
               <div className="setting-group">
-                <label>Win Condition</label>
-                <select 
-                  value={winCondition} 
-                  onChange={(e) => setWinCondition(e.target.value as any)}
+                <label htmlFor="win-condition">Win Condition</label>
+                <select
+                  id="win-condition"
+                  value={winCondition}
+                  onChange={(e) => setWinCondition(e.target.value as WinCondition)}
                   className="select"
                 >
-                  <option value="single">Single Battle</option>
-                  <option value="best-of-3">Best of 3</option>
-                  <option value="best-of-5">Best of 5</option>
+                  {WIN_CONDITIONS.map(condition => (
+                    <option key={condition} value={condition}>{WIN_LABELS[condition]}</option>
+                  ))}
                 </select>
               </div>
 
@@ -122,7 +145,7 @@ export function Home({ onCreateRoom, onJoinRoom, onSinglePlayer }: HomeProps) {
                 <button type="button" onClick={() => setShowCreate(false)} className="btn btn-secondary">
                   Back
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button type="submit" className="btn btn-primary" disabled={!connected}>
                   Create
                 </button>
               </div>

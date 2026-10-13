@@ -1,6 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
-import { Matrix } from '../utils/Matrix';
-import { CommandParser } from '../utils/CommandParser';
+import { useMemo, useState } from 'react';
+import { Matrix, describeOp, type RowOp } from '@shared/matrix.js';
+import { parseCommand } from '@shared/parser.js';
+import { COUNTDOWN_MS, MATRIX_SIZES, type MatrixSize } from '@shared/protocol.js';
+import { formatTime, useNow } from '../lib/time';
+import { CommandBar } from './CommandBar';
+import { History } from './History';
 import { MatrixDisplay } from './Matrix';
 import './SinglePlayer.css';
 
@@ -8,106 +12,64 @@ interface SinglePlayerProps {
   onBack: () => void;
 }
 
+interface Game {
+  start: Matrix;
+  ops: RowOp[];
+  /** When the countdown began, on the `performance.now()` clock. */
+  dealtAt: number;
+  /** Set once the matrix reaches RREF. */
+  solvedInMs: number | null;
+}
+
+const SIZE_LABELS: Record<MatrixSize, string> = {
+  '3x3': '3×3',
+  '4x4': '4×4',
+  '5x5': '5×5',
+  random: 'Random Size'
+};
+
 export function SinglePlayer({ onBack }: SinglePlayerProps) {
-  const [matrixSize, setMatrixSize] = useState<string>('3x3');
-  const [matrix, setMatrix] = useState<Matrix | null>(null);
-  const [command, setCommand] = useState('');
-  const [error, setError] = useState('');
-  const [startTime, setStartTime] = useState<number | null>(null);
-  const [elapsedTime, setElapsedTime] = useState(0);
-  const [isComplete, setIsComplete] = useState(false);
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const timerRef = useRef<number | undefined>(undefined);
-  const countdownRef = useRef<number | undefined>(undefined);
+  const [matrixSize, setMatrixSize] = useState<MatrixSize>('3x3');
+  const [game, setGame] = useState<Game | null>(null);
 
-  useEffect(() => {
-    if (countdown !== null && countdown > 0) {
-      countdownRef.current = window.setTimeout(() => {
-        setCountdown(countdown - 1);
-      }, 1000);
-    } else if (countdown === 0) {
-      setCountdown(null);
-      setStartTime(Date.now());
-    }
+  const now = useNow(!!game && game.solvedInMs === null);
 
-    return () => {
-      if (countdownRef.current) {
-        clearTimeout(countdownRef.current);
-      }
-    };
-  }, [countdown]);
-
-  useEffect(() => {
-    if (startTime && !isComplete) {
-      timerRef.current = window.setInterval(() => {
-        setElapsedTime(Date.now() - startTime);
-      }, 100);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [startTime, isComplete]);
+  // The matrix is rebuilt from the starting position, so undo is just dropping an operation.
+  const matrix = useMemo(() => {
+    if (!game) return null;
+    const current = game.start.clone();
+    for (const op of game.ops) current.apply(op);
+    return current;
+  }, [game]);
 
   const startNewGame = () => {
-    const [rows, cols] = matrixSize === 'random' 
-      ? ['3x3', '4x4', '5x5'][Math.floor(Math.random() * 3)].split('x').map(Number)
-      : matrixSize.split('x').map(Number);
-    
-    const newMatrix = new Matrix(rows, cols);
-    setMatrix(newMatrix);
-    setCommand('');
-    setError('');
-    setStartTime(null);
-    setElapsedTime(0);
-    setIsComplete(false);
-    setCountdown(3);
+    const size = matrixSize === 'random' ? 3 + Math.floor(Math.random() * 3) : Number(matrixSize[0]);
+    setGame({ start: Matrix.random(size, size, { maxAbs: 9 }), ops: [], dealtAt: performance.now(), solvedInMs: null });
   };
 
-  const handleExecuteCommand = () => {
-    if (!matrix || !command.trim()) return;
+  const execute = (command: string): string | null => {
+    if (!game || !matrix) return null;
+    const parsed = parseCommand(command, matrix.rowCount);
+    if (!parsed.ok) return parsed.error;
 
-    const result = CommandParser.parse(command, matrix);
-    
-    if (result.success) {
-      setMatrix(new Matrix(0, 0)); // Trigger re-render
-      setMatrix(matrix);
-      setCommand('');
-      setError('');
-
-      // Check if RREF is achieved
-      if (matrix.isInRREF()) {
-        setIsComplete(true);
-      }
-    } else {
-      setError(result.error || 'Invalid command');
-    }
+    const next = matrix.clone();
+    next.apply(parsed.op);
+    setGame({
+      ...game,
+      ops: [...game.ops, parsed.op],
+      solvedInMs: next.isRref() ? performance.now() - game.dealtAt - COUNTDOWN_MS : null
+    });
+    return null;
   };
 
-  const handleUndo = () => {
-    if (!matrix) return;
-
-    if (matrix.undo()) {
-      setMatrix(new Matrix(0, 0));
-      setMatrix(matrix);
-      setError('');
-      setIsComplete(false);
-    }
+  const undo = () => {
+    if (game) setGame({ ...game, ops: game.ops.slice(0, -1) });
   };
 
-  const formatTime = (ms: number): string => {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    const centis = Math.floor((ms % 1000) / 10);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}.${centis.toString().padStart(2, '0')}`;
-  };
+  const sinceDealt = game ? Math.max(0, now - game.dealtAt) : 0;
+  const counting = sinceDealt < COUNTDOWN_MS;
+  const elapsed = game?.solvedInMs ?? sinceDealt - COUNTDOWN_MS;
+  const solved = game?.solvedInMs != null;
 
   return (
     <div className="single-player">
@@ -117,96 +79,52 @@ export function SinglePlayer({ onBack }: SinglePlayerProps) {
 
       <h1>Single Player - Practice Mode</h1>
 
-      {countdown !== null && matrix ? (
-        <div className="countdown-overlay">
-          <div className="countdown-number">{countdown}</div>
-          <div className="matrix-preview">
-            <h3>Get Ready!</h3>
-            <MatrixDisplay matrix={matrix.getData()} />
-          </div>
-        </div>
-      ) : !matrix ? (
+      {!game || !matrix ? (
         <div className="matrix-config">
           <h3>Configure Your Matrix</h3>
           <div className="config-group">
-            <label>Matrix Size:</label>
-            <select value={matrixSize} onChange={(e) => setMatrixSize(e.target.value)}>
-              <option value="3x3">3×3</option>
-              <option value="4x4">4×4</option>
-              <option value="5x5">5×5</option>
-              <option value="random">Random Size</option>
+            <label htmlFor="practice-size">Matrix Size:</label>
+            <select id="practice-size" value={matrixSize} onChange={(e) => setMatrixSize(e.target.value as MatrixSize)}>
+              {MATRIX_SIZES.map(size => (
+                <option key={size} value={size}>{SIZE_LABELS[size]}</option>
+              ))}
             </select>
           </div>
           <button className="btn btn-primary" onClick={startNewGame}>Start Practice</button>
+        </div>
+      ) : counting ? (
+        <div className="countdown-overlay">
+          <div className="countdown-number">{Math.max(1, Math.ceil((COUNTDOWN_MS - sinceDealt) / 1000))}</div>
+          <div className="matrix-preview">
+            <h3>Get Ready!</h3>
+            <MatrixDisplay matrix={matrix.toStrings()} />
+          </div>
         </div>
       ) : (
         <>
           <div className="single-player-header">
             <div className="timer">
-              Time: {formatTime(elapsedTime)}
+              Time: {formatTime(elapsed)}
             </div>
             <button className="btn btn-secondary" onClick={startNewGame}>New Matrix</button>
           </div>
 
-          {isComplete && (
+          {solved && (
             <div className="status-indicator success">
-              🎉 Congratulations! You achieved RREF in {formatTime(elapsedTime)}!
-            </div>
-          )}
-
-          {error && (
-            <div className="status-indicator error">
-              {error}
+              Solved in {formatTime(elapsed)} with {game.ops.length} {game.ops.length === 1 ? 'operation' : 'operations'}.
             </div>
           )}
 
           <div className="game-area">
             <div className="matrix-section">
               <h3>Your Matrix</h3>
-              <MatrixDisplay matrix={matrix.getData()} />
+              <MatrixDisplay matrix={matrix.toStrings()} />
             </div>
 
             <div className="controls-section">
               <h3>Row Operations</h3>
-              
-              <div className="command-input-group">
-                <input
-                  type="text"
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleExecuteCommand()}
-                  placeholder="Enter command (e.g., R1 <> R2)"
-                  disabled={isComplete || countdown !== null}
-                />
-                <div className="button-group">
-                  <button className="btn btn-primary" onClick={handleExecuteCommand} disabled={isComplete || !command.trim() || countdown !== null}>
-                    Execute
-                  </button>
-                  <button className="btn btn-secondary" onClick={handleUndo} disabled={matrix.getHistory().length === 0 || countdown !== null}>
-                    Undo
-                  </button>
-                </div>
-              </div>
-
-              <div className="history-section">
-                <h4>Operation History ({matrix.getHistory().length} operations)</h4>
-                <ul className="history-list">
-                  {matrix.getHistory().map((op, i) => (
-                    <li key={i}>{op.description}</li>
-                  ))}
-                </ul>
-              </div>
-
-              <div style={{ marginTop: '20px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                <strong>Command Examples:</strong>
-                <ul style={{ margin: '5px 0', paddingLeft: '20px' }}>
-                  <li>R1 {'<>'} R2 - Swap rows</li>
-                  <li>R1 = 3*R1 - Multiply row</li>
-                  <li>R1 = R1/5 - Divide row</li>
-                  <li>R1 = R1 + 2R2 - Add rows</li>
-                  <li>R1 = R1 - (3/2)R2 - Subtract with fraction</li>
-                </ul>
-              </div>
+              {!solved && <CommandBar onSubmit={execute} onUndo={undo} canUndo={game.ops.length > 0} />}
+              <History operations={game.ops.map(describeOp)} />
             </div>
           </div>
         </>

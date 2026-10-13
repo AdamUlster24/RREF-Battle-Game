@@ -3,7 +3,6 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 20px;
 }
 
@@ -125,4 +124,10 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.connection-note {
+  text-align: center;
+  color: #888;
+  font-size: 14px;
 }

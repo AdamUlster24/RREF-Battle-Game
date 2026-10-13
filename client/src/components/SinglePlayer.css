@@ -3,7 +3,6 @@
   margin: 0 auto;
   padding: 20px;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .single-player h1 {
@@ -22,7 +21,7 @@
   border-radius: 8px;
 }
 
-.timer {
+.single-player .timer {
   font-size: 1.5rem;
   font-weight: bold;
   color: #667eea;
@@ -89,31 +88,6 @@
   color: #333;
 }
 
-.command-input-group {
-  margin-bottom: 20px;
-}
-
-.command-input-group input {
-  width: 100%;
-  padding: 10px;
-  border-radius: 4px;
-  border: 1px solid #ddd;
-  background: white;
-  color: #333;
-  font-size: 1rem;
-  margin-bottom: 10px;
-}
-
-.button-group {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-.button-group button {
-  flex: 1;
-}
-
 .status-indicator {
   padding: 15px;
   border-radius: 8px;
@@ -126,39 +100,6 @@
   background: rgba(76, 175, 80, 0.2);
   color: #4caf50;
   border: 2px solid #4caf50;
-}
-
-.status-indicator.error {
-  background: rgba(244, 67, 54, 0.2);
-  color: #f44336;
-  border: 2px solid #f44336;
-}
-
-.history-section {
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.history-section h4 {
-  margin-top: 0;
-  color: #666;
-  font-size: 0.9rem;
-}
-
-.history-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.history-list li {
-  padding: 8px;
-  background: #f5f5f5;
-  border-radius: 4px;
-  margin-bottom: 5px;
-  font-family: monospace;
-  font-size: 0.9rem;
-  color: #666;
 }
 
 .back-button {
@@ -191,15 +132,15 @@
   z-index: 1000;
 }
 
-.countdown-number {
+.single-player .countdown-number {
   font-size: 150px;
   font-weight: bold;
   color: white;
   margin-bottom: 40px;
-  animation: pulse 1s infinite;
+  animation: overlay-pulse 1s infinite;
 }
 
-@keyframes pulse {
+@keyframes overlay-pulse {
   0%, 100% {
     transform: scale(1);
     opacity: 1;
@@ -210,14 +151,14 @@
   }
 }
 
-.matrix-preview {
+.single-player .matrix-preview {
   background: white;
   padding: 30px;
   border-radius: 12px;
   max-width: 600px;
 }
 
-.matrix-preview h3 {
+.single-player .matrix-preview h3 {
   text-align: center;
   color: #333;
   margin-bottom: 20px;
