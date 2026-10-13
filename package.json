@@ -2,6 +2,7 @@
   "name": "rref-battle",
   "private": true,
   "description": "Race a friend to put a matrix into reduced row echelon form.",
+  "license": "MIT",
   "scripts": {
     "setup": "npm ci --include=dev --prefix server && npm ci --include=dev --prefix client",
     "build": "npm run build --prefix server && npm run build --prefix client",

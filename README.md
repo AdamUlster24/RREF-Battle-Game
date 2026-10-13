@@ -96,3 +96,7 @@ The suite includes property-style tests: random sequences of row operations must
 - Rooms live in memory, so a server restart ends every match.
 - A dropped connection removes the player from the room; there is no rejoin.
 - Matches are two players only.
+
+## License
+
+[MIT](LICENSE)
