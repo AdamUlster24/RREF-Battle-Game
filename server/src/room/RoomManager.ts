@@ -1,58 +1,55 @@
-import { Room, type RoomSettings } from './Room.js';
+import { ROOM_CODE_LENGTH, type Ack, type RoomSettings } from '../../../shared/protocol.js';
+import { Room } from './Room.js';
+
+// No 0/O or 1/I: codes get read aloud and typed by hand.
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export class RoomManager {
-  private rooms: Map<string, Room>;
-  private playerRooms: Map<string, string>; // playerId -> roomId
+  private rooms = new Map<string, Room>();
+  private playerRooms = new Map<string, string>(); // playerId -> roomId
 
-  constructor() {
-    this.rooms = new Map();
-    this.playerRooms = new Map();
+  get roomCount(): number {
+    return this.rooms.size;
   }
 
   createRoom(hostId: string, hostUsername: string, settings: RoomSettings): Room {
-    const roomId = this.generateRoomId();
-    const room = new Room(roomId, hostId, hostUsername, settings);
-    
-    this.rooms.set(roomId, room);
-    this.playerRooms.set(hostId, roomId);
-
+    this.leaveRoom(hostId);
+    const room = new Room(this.generateRoomId(), hostId, hostUsername, settings);
+    this.rooms.set(room.id, room);
+    this.playerRooms.set(hostId, room.id);
     return room;
   }
 
-  joinRoom(roomId: string, playerId: string, username: string): Room | null {
+  joinRoom(roomId: string, playerId: string, username: string): Ack {
     const room = this.rooms.get(roomId);
     if (!room) {
-      return null;
+      return { ok: false, error: `No room with the code ${roomId}.` };
     }
-
-    if (room.addPlayer(playerId, username)) {
+    if (this.playerRooms.get(playerId) === roomId) {
+      return { ok: false, error: 'You are already in this room.' };
+    }
+    if (room.playerCount >= 2) {
+      return { ok: false, error: 'That room is full.' };
+    }
+    this.leaveRoom(playerId);
+    const added = room.addPlayer(playerId, username);
+    if (added.ok) {
       this.playerRooms.set(playerId, roomId);
-      return room;
     }
-
-    return null;
+    return added;
   }
 
+  /** Takes a player out of their room. Returns the room if anyone is still in it. */
   leaveRoom(playerId: string): Room | null {
-    const roomId = this.playerRooms.get(playerId);
-    if (!roomId) {
-      return null;
-    }
-
-    const room = this.rooms.get(roomId);
-    if (!room) {
-      return null;
-    }
+    const room = this.getPlayerRoom(playerId);
+    this.playerRooms.delete(playerId);
+    if (!room) return null;
 
     room.removePlayer(playerId);
-    this.playerRooms.delete(playerId);
-
-    // If room is empty, delete it
-    if (room.getData().players.size === 0) {
-      this.rooms.delete(roomId);
+    if (room.playerCount === 0) {
+      this.rooms.delete(room.id);
       return null;
     }
-
     return room;
   }
 
@@ -65,23 +62,13 @@ export class RoomManager {
     return roomId ? this.rooms.get(roomId) : undefined;
   }
 
-  getAllRooms(): Room[] {
-    return Array.from(this.rooms.values());
-  }
-
   private generateRoomId(): string {
-    // Generate a 6-character room code
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let id = '';
-    for (let i = 0; i < 6; i++) {
-      id += chars.charAt(Math.floor(Math.random() * chars.length));
+    for (;;) {
+      let id = '';
+      for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
+        id += CODE_ALPHABET.charAt(Math.floor(Math.random() * CODE_ALPHABET.length));
+      }
+      if (!this.rooms.has(id)) return id;
     }
-
-    // Ensure uniqueness
-    if (this.rooms.has(id)) {
-      return this.generateRoomId();
-    }
-
-    return id;
   }
 }

@@ -1,207 +1,205 @@
-import { Matrix, type MatrixData, type Operation } from '../matrix/Matrix.js';
+import { Matrix, describeOp } from '../../../shared/matrix.js';
+import { parseCommand } from '../../../shared/parser.js';
+import {
+  REQUIRED_WINS,
+  type Ack,
+  type RoomSettings,
+  type RoomSnapshot,
+  type RoomState,
+  type RoundResult
+} from '../../../shared/protocol.js';
 
-export interface RoomSettings {
-  matrixSize: '3x3' | '4x4' | '5x5' | 'random';
-  winCondition: 'single' | 'best-of-3' | 'best-of-5';
-}
-
-export interface PlayerData {
+interface Player {
   id: string;
   username: string;
   ready: boolean;
-  matrix: Matrix | null;
-  completedAt: number | null;
   wins: number;
+  matrix: Matrix | null;
 }
 
-export interface RoomData {
-  id: string;
-  hostId: string;
-  settings: RoomSettings;
-  players: Map<string, PlayerData>;
-  state: 'waiting' | 'countdown' | 'playing' | 'finished';
-  countdownStarted: number | null;
-  gameStarted: number | null;
-  currentRound: number;
-  targetMatrix: MatrixData | null;
-}
+const MAX_PLAYERS = 2;
 
+/**
+ * One two-player match. Holds all game rules and no networking, so every
+ * transition can be tested directly; the socket layer only forwards events.
+ */
 export class Room {
-  private data: RoomData;
-  private maxPlayers = 2;
+  readonly id: string;
+  readonly settings: RoomSettings;
+  private hostId: string;
+  private players = new Map<string, Player>();
+  private state: RoomState = 'waiting';
+  private round = 1;
+  private startMatrix: Matrix | null = null;
+  private roundStartedAt = 0;
+  private lastRound: RoundResult | null = null;
+  private readonly now: () => number;
 
-  constructor(id: string, hostId: string, hostUsername: string, settings: RoomSettings) {
-    this.data = {
-      id,
-      hostId,
-      settings,
-      players: new Map(),
-      state: 'waiting',
-      countdownStarted: null,
-      gameStarted: null,
-      currentRound: 1,
-      targetMatrix: null
-    };
-
-    // Add host as first player
+  constructor(id: string, hostId: string, hostUsername: string, settings: RoomSettings, now: () => number = Date.now) {
+    this.id = id;
+    this.settings = settings;
+    this.hostId = hostId;
+    this.now = now;
     this.addPlayer(hostId, hostUsername);
   }
 
-  addPlayer(playerId: string, username: string): boolean {
-    if (this.data.players.size >= this.maxPlayers) {
-      return false;
-    }
-
-    if (this.data.players.has(playerId)) {
-      return false;
-    }
-
-    this.data.players.set(playerId, {
-      id: playerId,
-      username,
-      ready: false,
-      matrix: null,
-      completedAt: null,
-      wins: 0
-    });
-
-    return true;
+  get playerCount(): number {
+    return this.players.size;
   }
 
+  getState(): RoomState {
+    return this.state;
+  }
+
+  getRound(): number {
+    return this.round;
+  }
+
+  addPlayer(playerId: string, username: string): Ack {
+    if (this.players.has(playerId)) {
+      return { ok: false, error: 'You are already in this room.' };
+    }
+    if (this.players.size >= MAX_PLAYERS) {
+      return { ok: false, error: 'That room is full.' };
+    }
+    this.players.set(playerId, { id: playerId, username, ready: false, wins: 0, matrix: null });
+    return { ok: true };
+  }
+
+  /**
+   * Removes a player. Whoever is left becomes host, and a match in progress
+   * is abandoned: the room goes back to waiting with a clean score.
+   */
   removePlayer(playerId: string): boolean {
-    return this.data.players.delete(playerId);
-  }
+    if (!this.players.delete(playerId)) return false;
 
-  getPlayer(playerId: string): PlayerData | undefined {
-    return this.data.players.get(playerId);
-  }
-
-  setPlayerReady(playerId: string, ready: boolean): boolean {
-    const player = this.data.players.get(playerId);
-    if (!player) return false;
-
-    player.ready = ready;
+    const remaining = this.players.keys().next().value;
+    if (this.hostId === playerId && remaining !== undefined) {
+      this.hostId = remaining;
+    }
+    this.resetMatch();
     return true;
   }
 
-  canStart(): boolean {
+  toggleReady(playerId: string): boolean {
+    const player = this.players.get(playerId);
+    if (!player || this.state !== 'waiting') return false;
+    player.ready = !player.ready;
+    return true;
+  }
+
+  canStart(playerId: string): boolean {
     return (
-      this.data.players.size === this.maxPlayers &&
-      Array.from(this.data.players.values()).every(p => p.ready) &&
-      this.data.state === 'waiting'
+      playerId === this.hostId &&
+      this.state === 'waiting' &&
+      this.players.size === MAX_PLAYERS &&
+      [...this.players.values()].every(player => player.ready)
     );
   }
 
-  startCountdown(): void {
-    this.data.state = 'countdown';
-    this.data.countdownStarted = Date.now();
-
-    // Generate the target matrix
-    const [rows, cols] = this.getMatrixDimensions();
-    const matrix = Matrix.generateRandom(rows, cols);
-    this.data.targetMatrix = matrix.getData();
-
-    // Initialize each player with a copy of the matrix
-    this.data.players.forEach(player => {
-      player.matrix = new Matrix(this.data.targetMatrix!);
-      player.completedAt = null;
-    });
-  }
-
-  startGame(): void {
-    this.data.state = 'playing';
-    this.data.gameStarted = Date.now();
-  }
-
-  getMatrixDimensions(): [number, number] {
-    if (this.data.settings.matrixSize === 'random') {
-      const sizes = ['3x3', '4x4', '5x5'];
-      const randomSize = sizes[Math.floor(Math.random() * sizes.length)]!;
-      return this.parseDimensions(randomSize);
+  /** Deals the round's matrix to both players. It stays locked until `beginRound`. */
+  beginCountdown(): void {
+    const [rows, cols] = this.dimensions();
+    this.startMatrix = Matrix.random(rows, cols);
+    for (const player of this.players.values()) {
+      player.matrix = this.startMatrix.clone();
     }
-    return this.parseDimensions(this.data.settings.matrixSize);
+    this.lastRound = null;
+    this.state = 'countdown';
   }
 
-  private parseDimensions(size: string): [number, number] {
-    const parts = size.split('x').map(Number);
-    return [parts[0]!, parts[1]!];
+  beginRound(): boolean {
+    if (this.state !== 'countdown') return false;
+    this.state = 'playing';
+    this.roundStartedAt = this.now();
+    return true;
   }
 
-  handlePlayerOperation(playerId: string, operation: Operation): boolean {
-    const player = this.data.players.get(playerId);
-    if (!player || !player.matrix || this.data.state !== 'playing') {
-      return false;
+  /** Runs a typed command for a player. Reaching RREF wins the round on the spot. */
+  applyCommand(playerId: string, command: string): Ack {
+    const player = this.players.get(playerId);
+    if (!player?.matrix || this.state !== 'playing') {
+      return { ok: false, error: 'The round is not in play.' };
     }
-
-    // The operation has already been applied to the matrix
-    // Check if player completed RREF
-    if (player.matrix.isInRREF() && !player.completedAt) {
-      player.completedAt = Date.now();
-      return true;
+    const parsed = parseCommand(command, player.matrix.rowCount);
+    if (!parsed.ok) {
+      return parsed;
     }
-
-    return false;
+    player.matrix.apply(parsed.op);
+    if (player.matrix.isRref()) {
+      this.finishRound(player);
+    }
+    return { ok: true };
   }
 
-  checkRoundComplete(): { complete: boolean; winner?: string } {
-    const players = Array.from(this.data.players.values());
-    const completedPlayers = players.filter(p => p.completedAt !== null);
+  undo(playerId: string): boolean {
+    const player = this.players.get(playerId);
+    if (!player?.matrix || this.state !== 'playing') return false;
+    return player.matrix.undo();
+  }
 
-    if (completedPlayers.length === 0) {
-      return { complete: false };
-    }
+  /** After a round that did not decide the match: back to the ready screen. */
+  nextRound(): boolean {
+    if (this.state !== 'round-over') return false;
+    this.round++;
+    this.toWaiting();
+    return true;
+  }
 
-    // Find the fastest player
-    const winner = completedPlayers.reduce((fastest, current) =>
-      (current.completedAt! < fastest.completedAt!) ? current : fastest
-    );
+  /** After a finished match: same players, fresh score. */
+  rematch(): boolean {
+    if (this.state !== 'finished') return false;
+    this.resetMatch();
+    return true;
+  }
 
-    // Award win
+  snapshot(): RoomSnapshot {
+    return {
+      id: this.id,
+      hostId: this.hostId,
+      settings: this.settings,
+      state: this.state,
+      round: this.round,
+      requiredWins: REQUIRED_WINS[this.settings.winCondition],
+      players: [...this.players.values()].map(player => ({
+        id: player.id,
+        username: player.username,
+        ready: player.ready,
+        wins: player.wins,
+        matrix: player.matrix?.toStrings() ?? null,
+        history: player.matrix?.history().map(describeOp) ?? []
+      })),
+      startMatrix: this.startMatrix?.toStrings() ?? null,
+      lastRound: this.lastRound
+    };
+  }
+
+  private finishRound(winner: Player): void {
     winner.wins++;
-
-    // Check if match is complete
-    const maxWins = this.getRequiredWins();
-    if (winner.wins >= maxWins) {
-      this.data.state = 'finished';
-      return { complete: true, winner: winner.id };
-    }
-
-    return { complete: true, winner: winner.id };
+    this.lastRound = { winnerId: winner.id, timeMs: this.now() - this.roundStartedAt };
+    this.state = winner.wins >= REQUIRED_WINS[this.settings.winCondition] ? 'finished' : 'round-over';
   }
 
-  getRequiredWins(): number {
-    switch (this.data.settings.winCondition) {
-      case 'single': return 1;
-      case 'best-of-3': return 2;
-      case 'best-of-5': return 3;
-      default: return 1;
+  private resetMatch(): void {
+    this.round = 1;
+    this.lastRound = null;
+    for (const player of this.players.values()) {
+      player.wins = 0;
     }
+    this.toWaiting();
   }
 
-  resetForNextRound(): void {
-    this.data.currentRound++;
-    this.data.state = 'waiting';
-    this.data.countdownStarted = null;
-    this.data.gameStarted = null;
-    this.data.targetMatrix = null;
-
-    this.data.players.forEach(player => {
+  private toWaiting(): void {
+    this.state = 'waiting';
+    this.startMatrix = null;
+    for (const player of this.players.values()) {
       player.ready = false;
       player.matrix = null;
-      player.completedAt = null;
-    });
-  }
-
-  getData(): RoomData {
-    return this.data;
-  }
-
-  updateSettings(settings: Partial<RoomSettings>): boolean {
-    if (this.data.state !== 'waiting') {
-      return false;
     }
+  }
 
-    this.data.settings = { ...this.data.settings, ...settings };
-    return true;
+  private dimensions(): [number, number] {
+    const size = this.settings.matrixSize === 'random' ? 3 + Math.floor(Math.random() * 3) : Number(this.settings.matrixSize[0]);
+    return [size, size];
   }
 }
